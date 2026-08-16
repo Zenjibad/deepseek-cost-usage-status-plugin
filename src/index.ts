@@ -280,9 +280,19 @@ export async function* accumulateStream(
   }
 }
 
+/**
+ * Bound the session map so per-session cost survives switching sessions:
+ * keep `keepId` plus the most recent MAX_SESSIONS - 1 others (insertion order).
+ * ponytail: fixed cap of 20 tracked sessions; raise MAX_SESSIONS if a workflow
+ * needs more than 19 historical sessions visible at once.
+ */
+export const MAX_SESSIONS = 20
+
 export function pruneSessions(sessions: Map<string, SessionState>, keepId: string): void {
   for (const key of Array.from(sessions.keys())) {
-    if (key !== keepId) sessions.delete(key)
+    if (key === keepId) continue
+    if (sessions.size <= MAX_SESSIONS) break
+    sessions.delete(key)
   }
 }
 
