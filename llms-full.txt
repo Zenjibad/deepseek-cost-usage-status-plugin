@@ -1,0 +1,71 @@
+# DeepSeek Cost / Usage / Status Plugin for DeepSeek Harness
+
+A **dynamic Cordis plugin** for DeepSeek Harness (DSH) that adds a second, colored status line
+under the shipped conversation stats line, showing live DeepSeek API cost, usage, and account balance.
+
+## Features
+
+- **On / off-peak indicator** — green when off-peak (idle), red when peak, using DeepSeek's official
+  Beijing-time peak windows (09:00–12:00, 14:00–18:00). The clock shows your local timezone; the
+  decision is Beijing-time so the color matches what DeepSeek actually bills.
+- **Session cost** — real per-session token usage from the `llm/stream` waterfall, priced with official
+  CNY rates including the 50% off-peak discount.
+- **Burn rate** — session cost ÷ elapsed minutes since the session's first model call (`~¥/min`).
+- **Account balance** — polled from DeepSeek `/user/balance` every 60s using DSH's own
+  `DEEPSEEK_API_KEY`; degrades to `Balance —` if unavailable.
+- **Current model + reasoning effort**.
+- **Font-matched** to the shipped stats line (12px/20px, muted tertiary, centered).
+
+## How it works
+
+- **Host half** (source of truth): wraps `llm/stream` (pass-through, never breaks streaming), reads the
+  terminal `usage` chunk per call, accumulates per-session tokens/model/timing, computes cost from the
+  `PRICING` table (official CNY, peak-class; idle = 50%) with the Beijing-time peak decision, and polls
+  balance via `curl.exe` + `subprocess`. Exposes one RPC: `dsb-snapshot`.
+- **Client half**: registers in `conversation.composer.dock`, polls `dsb-snapshot` every 2s, renders the
+  font-matched line with a green/red peak chip.
+
+## Snapshot shape
+
+```jsonc
+{
+  "isOffPeak": true, "isPeak": false,
+  "localTime": "00:47", "beijingTime": "00:47",
+  "offPeakDiscount": 0.5,
+  "sessionCost": 0.0412, "unknownPricing": false,
+  "burnPerMin": 1.23, "costCurrency": "CNY",
+  "model": "deepseek-v4-flash", "reasoningEffort": "high", "calls": 2,
+  "balance": { "balance": 12.42, "currency": "CNY", "isAvailable": true, "lastFetch": 1710000000000 }
+}
+```
+
+## Line format
+
+```
+● Off-peak 00:47 · −50%  ·  Cost ¥0.0412  ·  ~¥1.23/min  ·  Balance 12.42 CNY  ·  Model deepseek-v4-flash
+● Peak 10:22            ·  Cost ¥0.5000  ·  ~¥0.25/min  ·  Balance —        ·  Model deepseek-v4-flash
+```
+
+## Pricing table (official CNY, per 1M tokens, effective 2026-08-17)
+
+| model |         | cache-hit in | cache-miss in | output |
+| --- | --- | --- | --- | --- |
+| deepseek-v4-flash | idle | ¥0.05 | ¥1.5 | ¥4.5 |
+|                   | peak | ¥0.10 | ¥3.0 | ¥9.0 |
+| deepseek-v4-pro   | idle | ¥0.15 | ¥4.5 | ¥13.5 |
+|                   | peak | ¥0.30 | ¥9.0 | ¥27.0 |
+
+## Install
+
+Register via `cordis_define` (kind `new`) with `code.host` / `code.client` from `package-source.js`,
+then `cordis_run`. Render target: `conversation.composer.dock` (new cell `deepseek-cost-status`, order 1).
+
+## Requirements
+
+- DSH 0.1.0-rc.6+ with the web UI and a configured DeepSeek provider.
+- `DEEPSEEK_API_KEY` in `~/.dsh/.credentials.yaml` for the balance read (optional; without it,
+  balance shows `—`).
+
+## License
+
+MIT.

@@ -1,0 +1,9 @@
+# deepseek-cost-usage-status-plugin
+
+A dynamic Cordis plugin for DeepSeek Harness (DSH) showing live DeepSeek API cost / usage / balance: a second composer stats line with on/off-peak (Beijing-time windows, green/red in local time), session cost (official CNY pricing), ~¥/min burn, account balance, and current model.
+
+- Docs: [README.md](README.md) · [README.zh.md](README.zh.md)
+- Design: [docs/design.md](docs/design.md)
+- Plan: [docs/plan.md](docs/plan.md)
+- Source: [package-source.js](package-source.js) (`host` → cordis_define `code.host`, `client` → `code.client`)
+- Guide: [AGENTS.md](AGENTS.md)
