@@ -1,0 +1,18 @@
+# deepseek-cost-usage-status-plugin — bundle patch layer.
+#
+# This file is the `dsh.bundle.patch` layer of the published npm package: when
+# the plugin is installed through the official CLI —
+#
+#   dsh plugin --profile web add <deepseek-cost-usage-status-plugin install spec>
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages
+# and, seeing this declaration, appends `deepseek-cost-usage-status-plugin` to
+# the bundle stack. The profile boot then merges THIS patch (a single `insert`
+# of the plugin row) like a manual cordis.patch.yml mount line. No profile file
+# edits needed — one command installs and mounts. The row's `name` references
+# the package; Node resolution finds `lib/index.js` (the host half) inside the
+# installed package, and the client-modules scanner discovers
+# `exports["./client"]` (lib/client.js) via the `dsh.client` declaration.
+- insert:
+    - id: deepseek-cost-usage-status-plugin
+      name: 'deepseek-cost-usage-status-plugin'

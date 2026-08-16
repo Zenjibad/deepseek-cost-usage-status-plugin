@@ -1,9 +1,31 @@
 # deepseek-cost-usage-status-plugin
 
-A dynamic Cordis plugin for DeepSeek Harness (DSH) showing live DeepSeek API cost / usage / balance: a second composer stats line with on/off-peak (Beijing-time windows, green/red in local time), session cost (official CNY pricing), ~¥/min burn, account balance, and current model.
+> Live DeepSeek API cost/usage/balance dashboard for the DeepSeek Harness (DSH) Web UI: a second composer stats line with on/off-peak (Beijing-time windows), session cost (official CNY pricing), ~¥/min burn, account balance, and current model. 在 DSH 内实时展示 DeepSeek API 用量与费用：输入区常驻统计行。
 
-- Docs: [README.md](README.md) · [README.zh.md](README.zh.md)
-- Design: [docs/design.md](docs/design.md)
-- Plan: [docs/plan.md](docs/plan.md)
-- Source: [package-source.js](package-source.js) (`host` → cordis_define `code.host`, `client` → `code.client`)
-- Guide: [AGENTS.md](AGENTS.md)
+For the complete combined document, see [llms-full.txt](llms-full.txt). For human-readable docs, see [README.md](README.md) (English) and [README.zh.md](README.zh.md) (中文).
+
+## Key facts
+
+- [Repository](https://github.com/Zenjibad/deepseek-cost-usage-status-plugin): public GitHub repo, MIT license, `dsh-plugin` topic.
+- [Install](README.md#-quick-start): packaged profile plugin — `dsh plugin --profile web add <spec>` (local dir or `git+https://github.com/Zenjibad/deepseek-cost-usage-status-plugin.git`), then restart DSH. `dsh.bundle` (`cordis.patch.yml`) mounts the host half; `dsh.client` + `exports["./client"]` register the browser half. Survives restarts, no cordis_define.
+- [Data source](README.md#️-how-it-works): host wraps the `llm/stream` waterfall (real terminal `usage` chunks), prices calls with official CNY rates + Beijing peak windows, polls balance via `curl.exe` + `subprocess`, and serves the snapshot over `GET /deepseek-cost/api` (webServer route).
+- [UI seat](README.md#-features): `conversation.composer.dock` id `deepseek-cost-status` (order 1) — one font-matched line fed by a 2s poller fetching the host route.
+- [Balance key](README.md#-requirements): `DEEPSEEK_API_KEY` from `process.env` or `~/.dsh/.credentials.yaml`; missing key/network failure degrades to `Balance —` while cost still works.
+- [Failure mode](README.md#-faq): route unreachable → line shows `Cost …` placeholders, self-recovers ≤2s; API always returns JSON (`{ok:false,error}`).
+
+## Documentation
+
+- [README.md (English)](README.md): features, quick start, requirements, how it works, pricing, FAQ.
+- [README.zh.md (中文)](README.zh.md): same content in Chinese.
+- [src/index.ts](src/index.ts): host half — waterfall wrap, session attribution, pricing engine, balance poll, `/deepseek-cost/api` route.
+- [src/client/index.tsx](src/client/index.tsx): client bundle — 2s poller, dock line, peak chip.
+- [AGENTS.md](AGENTS.md): repository guide for AI agents (layout, key behaviors, probed environment facts, testing).
+- [package.json](package.json): npm metadata with `dsh.bundle` + `dsh.client` manifests for `dsh plugin add`.
+
+## Source layout
+
+- [src/index.ts](src/index.ts): the host half — `llm/stream` waterfall wrap, `PRICING` cost engine, `agent/session-start` attribution, curl balance poll, `webServer` JSON route.
+- [src/client/index.tsx](src/client/index.tsx): the client bundle — single 2s poller, `React.createElement` dock line, `--dsw-alias-*` theming.
+- [cordis.patch.yml](cordis.patch.yml): `dsh.bundle` patch inserting the plugin row.
+- [tsdown.config.ts](tsdown.config.ts): builds host (node ESM) + client (CJS ModuleLoader closure).
+- [tests/fixtures/balance.json](tests/fixtures/balance.json): real-shape `/user/balance` response sample.

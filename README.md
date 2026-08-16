@@ -1,6 +1,6 @@
 # DeepSeek Cost / Usage / Status Plugin for DeepSeek Harness
 
-A **dynamic Cordis plugin** for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) that adds a second, colored status line under the shipped conversation stats line, showing live **DeepSeek API cost, usage, and account balance**.
+A **packaged Cordis plugin** for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) that adds a second, colored status line under the shipped conversation stats line, showing live **DeepSeek API cost, usage, and account balance**.
 
 ```
 ● Off-peak 00:47 · −50%  ·  Cost ¥0.0412  ·  ~¥1.23/min  ·  Balance 12.42 CNY  ·  Model deepseek-v4-flash
@@ -15,15 +15,17 @@ A **dynamic Cordis plugin** for [DeepSeek Harness (DSH)](https://github.com/deep
 - **Current model + reasoning effort**.
 - **Font-matched** to the shipped stats line (12px/20px, muted tertiary color, centered) so it reads as the same family.
 
-## Install
+## Quick start
 
-This is a **dynamic-only** plugin — there is no static `cordis.patch.yml` mount. Register it in a running DSH session:
+This is a **packaged profile plugin** — install once with the official CLI, it loads on every DSH boot and survives restarts (no `cordis_define`):
 
-1. Open the **Package → Cordis** plugin surface, or from this agent use `cordis_define` with `kind: 'new'` (`idPrefix` of your choice).
-2. Paste the `host` field of [`package-source.js`](./package-source.js) into `code.host`, and the `client` field into `code.client`.
-3. `cordis_run` the defined Package and approve in the UI.
+```sh
+dsh plugin --profile web add deepseek-cost-usage-status-plugin
+# or from a local checkout:
+dsh plugin --profile web add ./deepseek-cost-usage-status-plugin
+```
 
-The plugin then renders its line in the `conversation.composer.dock` slot (a new cell beside the shipped `stats` cell).
+Then **restart DSH**. The plugin renders its line in the `conversation.composer.dock` slot (a new cell beside the shipped `stats` cell), fed by `GET /deepseek-cost/api`.
 
 ## Requirements
 
@@ -32,8 +34,8 @@ The plugin then renders its line in the `conversation.composer.dock` slot (a new
 
 ## How it works
 
-- **Host half** (source of truth): wraps the `llm/stream` waterfall, forwards every chunk untouched, reads the terminal `usage` chunk per completed call, accumulates per-session token/`model`/timing, computes cost from the `PRICING` table (official CNY, peak-class; idle = 50%) with the Beijing-time peak decision, and polls balance via `curl.exe` + `subprocess`. Exposes one RPC: `dsb-snapshot`.
-- **Client half**: registers in `conversation.composer.dock`, polls `dsb-snapshot` every 2s, and renders the font-matched line with a green/red peak chip.
+- **Host half** (source of truth): wraps the `llm/stream` waterfall, forwards every chunk untouched, reads the terminal `usage` chunk per completed call, accumulates per-session token/`model`/timing, computes cost from the `PRICING` table (official CNY, peak-class; idle = 50%) with the Beijing-time peak decision, and polls balance via `curl.exe` + `subprocess`. Serves the snapshot over **`GET /deepseek-cost/api`** (a `webServer` route — the packaged-plugin replacement for the dynamic `harness.handle` RPC seam).
+- **Client half**: registers in `conversation.composer.dock`, polls `/deepseek-cost/api` every 2s, and renders the font-matched line with a green/red peak chip.
 
 ## Pricing table (official DeepSeek CNY, per 1M tokens, effective 2026-08-17)
 
@@ -44,17 +46,24 @@ The plugin then renders its line in the `conversation.composer.dock` slot (a new
 | **deepseek-v4-pro** | idle | ¥0.15 | ¥4.5 | ¥13.5 |
 | | peak | ¥0.30 | ¥9.0 | ¥27.0 |
 
-Update `PRICING` in `package-source.js` (single place) when rates change.
+Update `PRICING` in [`src/index.ts`](./src/index.ts) (single place) when rates change.
+
+## FAQ
+
+- **The line shows `Cost …` / `Balance —`?** The host route is unreachable, the balance key is missing (`~/.dsh/.credentials.yaml` → `DEEPSEEK_API_KEY`), or the balance call failed (network / non-200). Cost/peak still work without balance; the line self-recovers on the next poll.
+- **Why does the balance read put the API key on a curl command line?** The key travels as an `Authorization` header argument to `curl.exe` (visible to other processes on this machine) — an accepted tradeoff for this readout tool. No key is stored or logged by the plugin itself.
+- **My account bills in USD?** `api.deepseek.com` prices are in CNY; if your account bills in USD instead, switch the model `currency` rows / cost display accordingly.
 
 ## Layout
 
-- `package-source.js` — the plugin (mirror of the live registry Package). `host` → `code.host`, `client` → `code.client`.
-- `docs/design.md`, `docs/plan.md` — spec and plan.
+- `src/index.ts` — the host half (waterfall wrap, pricing, balance poll, `/deepseek-cost/api` route).
+- `src/client/index.tsx` — the client bundle (2s poller, dock line).
+- `cordis.patch.yml` — `dsh.bundle.patch`: mounts the plugin row at boot.
+- `tsdown.config.ts` — builds host (node ESM) + client (CJS ModuleLoader closure).
+- `tests/fixtures/balance.json` — real-shape `/user/balance` response sample.
 - `AGENTS.md` — guide for AI agents / maintainers.
 - `README.zh.md` — 中文文档.
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-
-> Note: `api.deepseek.com` prices are in CNY; if your account bills in USD instead, switch the model `currency` rows / cost display accordingly.

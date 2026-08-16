@@ -1,6 +1,6 @@
-# DeepSeek Cost / Usage / Status Plugin for DeepSeek Harness
+# deepseek-cost-usage-status-plugin
 
-A **dynamic Cordis plugin** for DeepSeek Harness (DSH) that adds a second, colored status line
+A **packaged Cordis plugin** for DeepSeek Harness (DSH) that adds a second, colored status line
 under the shipped conversation stats line, showing live DeepSeek API cost, usage, and account balance.
 
 ## Features
@@ -21,14 +21,18 @@ under the shipped conversation stats line, showing live DeepSeek API cost, usage
 - **Host half** (source of truth): wraps `llm/stream` (pass-through, never breaks streaming), reads the
   terminal `usage` chunk per call, accumulates per-session tokens/model/timing, computes cost from the
   `PRICING` table (official CNY, peak-class; idle = 50%) with the Beijing-time peak decision, and polls
-  balance via `curl.exe` + `subprocess`. Exposes one RPC: `dsb-snapshot`.
-- **Client half**: registers in `conversation.composer.dock`, polls `dsb-snapshot` every 2s, renders the
-  font-matched line with a green/red peak chip.
+  balance via `curl.exe` + `subprocess`. Serves the snapshot over `GET /deepseek-cost/api` (a
+  `webServer` route — the packaged-plugin replacement for the dynamic `harness.handle` RPC seam).
+- **Client half**: registers in `conversation.composer.dock`, polls `/deepseek-cost/api` every 2s,
+  renders the font-matched line with a green/red peak chip.
 
 ## Snapshot shape
 
+`GET /deepseek-cost/api` returns:
+
 ```jsonc
 {
+  "ok": true,
   "isOffPeak": true, "isPeak": false,
   "localTime": "00:47", "beijingTime": "00:47",
   "offPeakDiscount": 0.5,
@@ -38,6 +42,8 @@ under the shipped conversation stats line, showing live DeepSeek API cost, usage
   "balance": { "balance": 12.42, "currency": "CNY", "isAvailable": true, "lastFetch": 1710000000000 }
 }
 ```
+
+On failure it always returns JSON `{ "ok": false, "error": "…" }` — never a non-JSON 500.
 
 ## Line format
 
@@ -55,10 +61,19 @@ under the shipped conversation stats line, showing live DeepSeek API cost, usage
 | deepseek-v4-pro   | idle | ¥0.15 | ¥4.5 | ¥13.5 |
 |                   | peak | ¥0.30 | ¥9.0 | ¥27.0 |
 
+Update `PRICING` in `src/index.ts` when rates change.
+
 ## Install
 
-Register via `cordis_define` (kind `new`) with `code.host` / `code.client` from `package-source.js`,
-then `cordis_run`. Render target: `conversation.composer.dock` (new cell `deepseek-cost-status`, order 1).
+Packaged profile plugin — no `cordis_define`:
+
+```sh
+dsh plugin --profile web add deepseek-cost-usage-status-plugin
+# or from a local checkout:
+dsh plugin --profile web add ./deepseek-cost-usage-status-plugin
+```
+
+Then restart DSH. Render target: `conversation.composer.dock` (new cell `deepseek-cost-status`, order 1).
 
 ## Requirements
 
