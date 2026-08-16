@@ -19,6 +19,38 @@ export const name = 'deepseek-cost-usage-status-plugin'
 // (balance poll), subprocess (curl balance read), llm (llm/stream waterfall).
 export const inject = ['webServer', 'timer', 'subprocess', 'llm']
 
+export interface Config {
+  /** Fallback CNY→display-currency rate (CNY per 1 unit, e.g. 7.2 for USD), used only when the live FX fetch fails. */
+  fallbackFxRate?: number
+  /** How often to refresh the live FX rate, in ms. Defaults to 1 hour. */
+  fxRefreshMs?: number
+}
+
+/**
+ * Cordis validates the entry config against this standard-schema object.
+ * Set it from a patch layer, e.g. in $DSH_HOME/cordis.patch.yml:
+ *
+ *   deepseek-cost-usage-status-plugin:
+ *     config: { fallbackFxRate: 7.2, fxRefreshMs: 3600000 }
+ */
+export const Config = {
+  '~standard': {
+    version: 1,
+    vendor: 'deepseek-cost-usage-status-plugin',
+    validate(value: unknown): { value: Config } | { issues: Array<{ message: string; path?: Array<string | number> }> } {
+      const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+      const out: Config = {}
+      if (typeof raw.fallbackFxRate === 'number' && Number.isFinite(raw.fallbackFxRate) && raw.fallbackFxRate > 0) {
+        out.fallbackFxRate = raw.fallbackFxRate
+      }
+      if (typeof raw.fxRefreshMs === 'number' && Number.isFinite(raw.fxRefreshMs) && raw.fxRefreshMs >= 60000) {
+        out.fxRefreshMs = Math.round(raw.fxRefreshMs)
+      }
+      return { value: out }
+    },
+  },
+}
+
 /* ------------------------------------------------------------------ *
  * Pure helpers (ported 1:1 from the dynamic plugin; no service deps)
  * ------------------------------------------------------------------ */
@@ -142,6 +174,61 @@ export function buildBalanceArgs(apiKey: string): string[] {
   ]
 }
 
+/** Public free FX endpoint with a CNY base: rates are units of each currency per 1 CNY. */
+export const FX_API = 'https://open.er-api.com/v6/latest/CNY'
+
+export function buildFxArgs(): string[] {
+  return ['curl.exe', '-sS', '-w', '\n%{http_code}', FX_API]
+}
+
+export interface FxRates {
+  ok: boolean
+  rates: Record<string, number>
+}
+
+/** Parse the `{result, rates}` body from open.er-api.com (rate values are numbers/strings). */
+export function parseFxRates(text: string): FxRates {
+  try {
+    const j = JSON.parse(text) as { result?: string; rates?: Record<string, unknown> }
+    if (j.result !== 'success' || !j.rates) return { ok: false, rates: {} }
+    const rates: Record<string, number> = {}
+    for (const [code, v] of Object.entries(j.rates)) {
+      const n = typeof v === 'number' ? v : Number(v)
+      if (Number.isFinite(n) && n > 0) rates[code] = n
+    }
+    return { ok: typeof rates['CNY'] === 'number', rates }
+  } catch {
+    return { ok: false, rates: {} }
+  }
+}
+
+export type FxSource = 'none' | 'live' | 'fallback'
+
+export interface FxResolution {
+  /** Units of the display currency per 1 CNY. 1 = no conversion. */
+  rate: number
+  source: FxSource
+}
+
+/**
+ * Resolve the CNY→target rate: live map first, then the configured fallback
+ * (config.fallbackFxRate is CNY per 1 unit → 1/fallbackFxRate units per CNY).
+ * Returns null when neither is available; CNY always resolves to 1.
+ */
+export function resolveFxRate(
+  targetCurrency: string,
+  liveRates: Record<string, number>,
+  config: Config,
+): FxResolution | null {
+  if (!targetCurrency || targetCurrency === 'CNY') return { rate: 1, source: 'none' }
+  const live = liveRates[targetCurrency]
+  if (typeof live === 'number' && Number.isFinite(live) && live > 0) return { rate: live, source: 'live' }
+  if (typeof config.fallbackFxRate === 'number' && Number.isFinite(config.fallbackFxRate) && config.fallbackFxRate > 0) {
+    return { rate: 1 / config.fallbackFxRate, source: 'fallback' }
+  }
+  return null
+}
+
 export interface SessionState {
   calls: CallRecord[]
   startedMs: number | null
@@ -215,6 +302,8 @@ export interface CostSnapshot {
   unknownPricing: boolean
   burnPerMin: number | null
   costCurrency: string
+  fxRate: number | null
+  fxSource: FxSource
   model: string | null
   reasoningEffort: string | null
   calls: number
@@ -268,18 +357,24 @@ const EMPTY_COST: CostSnapshot = {
   unknownPricing: false,
   burnPerMin: null,
   costCurrency: 'CNY',
+  fxRate: null,
+  fxSource: 'none',
   model: null,
   reasoningEffort: null,
   calls: 0,
   balance: { balance: null, currency: 'USD', isAvailable: false, lastFetch: null },
 }
 
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, cfg?: Partial<Config>): void {
   const c = ctx as unknown as HostCtx
   const fsRef = ctx.get('fs') as FsLike | undefined
+  const config = (cfg ?? {}) as Config
 
   const sessions = new Map<string, SessionState>()
   const balanceState = { balance: null as number | null, currency: 'USD', isAvailable: false, lastFetch: null as number | null }
+  // Live CNY→X rates from the FX API; kept across polls so a transient
+  // failure degrades to the last known live map, then the configured fallback.
+  const fxState = { rates: {} as Record<string, number>, lastFetch: null as number | null }
   // Single-slot attribution: usage is attributed to the most recent agent/session-start.
   let currentSessionId: string | null = null
 
@@ -343,15 +438,57 @@ export function apply(ctx: Context): void {
     }
   }
 
+  let fxPolling = false
+  async function refreshFxRates(): Promise<void> {
+    if (fxPolling) return
+    fxPolling = true
+    try {
+      const sub = ctx.get('subprocess') as SubprocessLike | undefined
+      if (sub === undefined) return
+      const handle = sub.spawn({
+        argv: buildFxArgs(),
+        cwd: '.',
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 131072 }, stderr: { maxBytes: 4096 } },
+        graceMs: 10000,
+      })
+      await handle.done
+      const text = handle.collected.stdout.readFrom(0).text
+      const split = splitCurlOutput(text)
+      if (split.code !== '200') return
+      const parsed = parseFxRates(split.body)
+      if (parsed.ok) {
+        fxState.rates = parsed.rates
+        fxState.lastFetch = Date.now()
+      }
+    } catch {
+      /* keep the last known live rates */
+    } finally {
+      fxPolling = false
+    }
+  }
+
   function buildSnapshot(): CostSnapshot {
     const s = currentSessionId ? sessions.get(currentSessionId) : undefined
-    const pricing = s && s.model ? PRICING[s.model] : undefined
     const peak = computePeakState(new Date())
     const cost = s ? sessionCost(s.calls) : { total: 0, unknown: false }
+
+    // User-currency display: convert the CNY cost into the account's balance
+    // currency when the balance poll succeeded. FX = live rate map first,
+    // then the configured fallback; without either, cost stays CNY.
+    let displayCurrency = 'CNY'
+    let fx: FxResolution | null = null
+    const balanceCurrency = balanceState.isAvailable ? balanceState.currency : ''
+    if (balanceCurrency && balanceCurrency !== 'CNY') {
+      fx = resolveFxRate(balanceCurrency, fxState.rates, config)
+      if (fx) displayCurrency = balanceCurrency
+    }
+    const factor = fx ? fx.rate : 1
+    const displayCost = cost.total * factor
+
     let burnPerMin: number | null = null
     if (s && s.startedMs) {
       const elapsedMin = (Date.now() - s.startedMs) / 60000
-      if (elapsedMin > 0 && cost.total > 0) burnPerMin = cost.total / elapsedMin
+      if (elapsedMin > 0 && displayCost > 0) burnPerMin = displayCost / elapsedMin
     }
     return {
       ok: true,
@@ -360,10 +497,12 @@ export function apply(ctx: Context): void {
       localTime: peak.localTime,
       offPeakDiscount: peak.offPeakDiscount,
       beijingTime: peak.beijingTime,
-      sessionCost: cost.total,
+      sessionCost: displayCost,
       unknownPricing: cost.unknown,
       burnPerMin,
-      costCurrency: pricing ? pricing.currency : 'CNY',
+      costCurrency: displayCurrency,
+      fxRate: fx ? fx.rate : null,
+      fxSource: fx ? fx.source : 'none',
       model: s ? s.model : null,
       reasoningEffort: s ? s.effort : null,
       calls: s ? s.calls.length : 0,
@@ -405,6 +544,9 @@ export function apply(ctx: Context): void {
 
     disposers.push(c.interval(() => void pollBalance(), 60000))
     void pollBalance()
+
+    disposers.push(c.interval(() => void refreshFxRates(), config.fxRefreshMs ?? 3600000))
+    void refreshFxRates()
 
     disposers.push(
       c.webServer.register({

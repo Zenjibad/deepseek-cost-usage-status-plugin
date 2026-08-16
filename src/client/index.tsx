@@ -29,6 +29,8 @@ interface Snapshot {
   unknownPricing?: boolean
   burnPerMin?: number | null
   costCurrency?: string
+  fxRate?: number | null
+  fxSource?: string
   model?: string | null
   reasoningEffort?: string | null
   calls?: number
@@ -43,7 +45,22 @@ interface RenderedLine {
   modelText: string
 }
 
-/** Port of the dynamic plugin's renderSnapshot; burn rate now uses the cost currency. */
+/**
+ * Currency → symbol map for the compact stats line. Unmapped ISO codes are
+ * rendered as their 3-letter code (e.g. `Cost 0.04 ZAR`).
+ */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥', KRW: '₩', INR: '₹',
+  CAD: 'C$', AUD: 'A$', HKD: 'HK$', SGD: 'S$', TWD: 'NT$', CHF: 'Fr',
+  RUB: '₽', BRL: 'R$', NZD: 'NZ$', SEK: 'kr', NOK: 'kr', DKK: 'kr', PLN: 'zł', TRY: '₺', MXN: 'MX$',
+}
+
+function currencySymbol(currency: string | undefined): string {
+  if (!currency) return ''
+  return CURRENCY_SYMBOLS[currency] || currency
+}
+
+/** Port of the dynamic plugin's renderSnapshot; cost/burn follow the snapshot's display currency. */
 function renderSnapshot(snap: Snapshot | null): RenderedLine {
   if (snap === null || snap.ok !== true) {
     return {
@@ -61,7 +78,7 @@ function renderSnapshot(snap: Snapshot | null): RenderedLine {
     : { text: '● Peak ' + localTime, color: '#c62828' }
 
   const cost = typeof snap.sessionCost === 'number' && Number.isFinite(snap.sessionCost) ? snap.sessionCost : 0
-  const costSymbol = snap.costCurrency === 'CNY' ? '¥' : '$'
+  const costSymbol = snap.costCurrency ? currencySymbol(snap.costCurrency) : '$'
   const costText = 'Cost ' + costSymbol + cost.toFixed(4)
 
   let burnText = '~—/min'
@@ -76,9 +93,10 @@ function renderSnapshot(snap: Snapshot | null): RenderedLine {
     const bal = Number(b.balance)
     if (Number.isFinite(bal)) {
       const currency = b.currency
-      balanceText = currency && currency !== 'USD'
-        ? 'Balance ' + bal.toFixed(2) + ' ' + currency
-        : 'Balance $' + bal.toFixed(2)
+      const sym = currencySymbol(currency)
+      balanceText = currency && sym !== currency
+        ? 'Balance ' + sym + bal.toFixed(2)
+        : 'Balance ' + bal.toFixed(2) + ' ' + currency
     }
   }
 

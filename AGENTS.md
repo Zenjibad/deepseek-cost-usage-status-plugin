@@ -29,12 +29,13 @@ This file helps AI coding agents and LLM tooling understand and work with this r
 6. **Single-slot session attribution**: usage is attributed to the most recently started `agent/session-start` (`agent.id`). Concurrent/parallel subagent streams may be misattributed — accepted for this single-session readout. `pruneSessions` caps the session map; do not remove it.
 7. **Never break streaming / never throw across the API**: `accumulateStream` wraps `onUsage` in try/catch; `/deepseek-cost/api` always returns JSON (`{ok:false,error}` on failure), never a non-JSON 500.
 8. **Font must match the shipped stats line**: the Client `DockLine` uses 12px/20px, `var(--dsw-alias-label-tertiary)`, centered nowrap block, and `var(--dsw-alias-separator-primary)` separators — matching `StatsLine.module.scss`. Do not set a font-family. No hardcoded colors except the peak chip (green `#2e7d32` / red `#c62828`, as shipped).
-9. **Currency-aware display**: cost and burn rate use `¥` when `costCurrency === 'CNY'` (default), `$` otherwise. Balance renders in the currency the API returns.
+9. **Currency-aware display**: the host converts the CNY cost into the **account balance currency** (from `/user/balance`) and sends the converted `sessionCost`/`burnPerMin` plus `costCurrency` (default `'CNY'` when balance is unknown), `fxRate` and `fxSource` (`'live'|'fallback'|'none'`). The client maps currency → symbol (¥ $ € £ …; unmapped ISO codes render as their 3-letter code). Balance renders in the currency the API returns. Conversion only activates when the balance poll succeeded — never guess a target currency.
 
 ## Common tasks
 
 - **Change poll intervals**: Host balance poller `ctx.interval(..., 60000)` (inside `ctx.effect`); Client refresh `POLL_MS = 2000` in `src/client/index.tsx`. Keep the Client using one interval; do not add per-seat polling.
-- **Update pricing**: edit the `PRICING` table in `src/index.ts` (peak-class CNY per 1M tokens). `costCurrency` is derived from the model's `currency` row.
+- **Update pricing**: edit the `PRICING` table in `src/index.ts` (peak-class CNY per 1M tokens). Cost display follows the balance currency via `resolveFxRate`; the `currency` row no longer drives the display symbol.
+- **Configure FX**: `Config` (`fallbackFxRate` CNY per 1 unit, `fxRefreshMs`) is validated by the exported standard-schema `Config` object; set via a patch layer row `config:` (e.g. `$DSH_HOME/cordis.patch.yml`). Live rates come from `FX_API` (`https://open.er-api.com/v6/latest/CNY`) through the same `curl.exe` + `subprocess` path as the balance poll — do NOT switch to `web.fetch`.
 - **Rebuild**: `pnpm install && pnpm build` (outputs `lib/index.js` + `lib/client.js`).
 - **Update the live profile install**: rebuild, then restart DSH (host-half changes need restart; client changes hot-reload only for already-mounted bundles — a changed `lib/client.js` is re-hashed and re-served).
 
