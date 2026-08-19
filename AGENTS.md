@@ -42,6 +42,7 @@ This file helps AI coding agents and LLM tooling understand and work with this r
 ## Environment facts (probed, do not re-probe)
 
 - **Packaged host plugins are real Node modules** (`cordis-plugin-loader` uses plain `import()`): `process.env` and `Date` ARE available — unlike the dynamic-plugin sandbox. No cmd env-probe needed.
+- **`curl.exe` must bypass inherited proxies (`--noproxy '*'`)**: llmtrim's daemon injects `HTTPS_PROXY=http://127.0.0.1:43117` into the environment; without `--noproxy '*'` the balance/FX calls route through llmtrim's MITM proxy and fail schannel verification (`SEC_E_UNTRUSTED_ROOT`), so the balance poll never succeeds and cost falls back to CNY with `fxSource: 'none'`. `buildBalanceArgs`/`buildFxArgs` must keep `--noproxy '*'`.
 - `fs.resolve` does **not** expand `~` or `${VAR}`; build absolute paths from `process.env.USERPROFILE` / `process.env.DSH_HOME`.
 - `webServer.register` route shape: `{kind: 'exact'|'prefix', path, handler(req, res)}` with node:http semantics; duplicate (kind, path) throws. Register inside `ctx.effect(() => …)` and RETURN the disposer.
 - The client bundle is plain browser JS (ModuleLoader CJS factory): `fetch`, `setInterval`, `document` are available; React comes from the module table (`external: react`).

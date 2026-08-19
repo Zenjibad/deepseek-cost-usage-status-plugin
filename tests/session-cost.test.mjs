@@ -1,4 +1,4 @@
-import { recordUsage, sessionCost, pruneSessions } from './lib/index.js'
+import { recordUsage, sessionCost, pruneSessions } from '../lib/index.js'
 const assert = (cond, msg) => { if (!cond) { console.error('FAIL: ' + msg); process.exit(1) } }
 const sessions = new Map()
 const at = () => new Date('2026-08-16T01:00:00Z') // 09:00 Beijing = PEAK, factor 1

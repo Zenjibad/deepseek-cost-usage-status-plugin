@@ -166,8 +166,12 @@ export function parseBalance(text: string): { isAvailable: boolean; balance: num
 export function buildBalanceArgs(apiKey: string): string[] {
   // NOTE: the API key travels on the child process's command line (visible to
   // other processes on this machine) — accepted tradeoff for this readout tool.
+  // `--noproxy '*'` bypasses any inherited HTTP(S)_PROXY (e.g. llmtrim's daemon
+  // at 127.0.0.1:43117 injects HTTPS_PROXY into the environment): the balance
+  // endpoint must be reached directly, or its MITM certificate fails schannel
+  // verification (SEC_E_UNTRUSTED_ROOT) and the balance poll never succeeds.
   return [
-    'curl.exe', '-sS',
+    'curl.exe', '-sS', '--noproxy', '*',
     '-H', 'Authorization: Bearer ' + apiKey,
     '-w', '\n%{http_code}',
     'https://api.deepseek.com/user/balance',
@@ -178,7 +182,9 @@ export function buildBalanceArgs(apiKey: string): string[] {
 export const FX_API = 'https://open.er-api.com/v6/latest/CNY'
 
 export function buildFxArgs(): string[] {
-  return ['curl.exe', '-sS', '-w', '\n%{http_code}', FX_API]
+  // Same `--noproxy '*'` as buildBalanceArgs: the FX fetch must also bypass any
+  // inherited proxy so it reaches open.er-api.com directly.
+  return ['curl.exe', '-sS', '--noproxy', '*', '-w', '\n%{http_code}', FX_API]
 }
 
 export interface FxRates {

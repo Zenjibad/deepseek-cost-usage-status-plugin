@@ -1,6 +1,6 @@
 {
   "name": "deepseek-cost-usage-status-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Live DeepSeek API cost/usage/balance dashboard for the DeepSeek Harness (DSH) Web UI: a second composer stats line plus per-session cost tracking — shows on/off-peak (Beijing-time windows), session cost (official CNY pricing), ~¥/min burn rate, account balance, and current model. 在 DSH 内实时展示 DeepSeek API 用量与费用：输入区常驻统计行，展示空闲/高峰时段（北京时间）、会话成本、每分钟烧钱速率、账户余额与当前模型。",
   "license": "MIT",
   "type": "module",
