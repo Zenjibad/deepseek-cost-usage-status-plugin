@@ -64,15 +64,22 @@ export interface PeakState {
   beijingTime: string
 }
 
+/** Effective instant (ms) of DeepSeek's weekend all-day off-peak rule:
+ *  00:00 Beijing, Sunday 2026-08-23 = 2026-08-22T16:00:00Z.
+ *  Before it, weekends followed the normal weekday peak windows; gating keeps
+ *  a call with a past date from silently repricing a pre-rule weekend. */
+const WEEKEND_OFFPEAK_FROM_MS = Date.UTC(2026, 7, 22, 16, 0, 0) // 2026-08-22T16:00:00Z
+
 /** DeepSeek's official peak hours are in BEIJING time (UTC+8): 09:00–12:00 and 14:00–18:00.
- *  Weekends (Sat/Sun in Beijing time) are always off-peak. */
+ *  Since 2026-08-23 00:00 Beijing, weekends (Sat/Sun in Beijing time) are always off-peak. */
 export function computePeakState(date: Date): PeakState {
   const bjMs = date.getTime() + 8 * 3600 * 1000
   const bj = new Date(bjMs)
   const minutes = bj.getUTCHours() * 60 + bj.getUTCMinutes()
   const weekdayBeijing = bj.getUTCDay() // 0=Sun, 6=Sat
   const isWeekend = weekdayBeijing === 0 || weekdayBeijing === 6
-  const isPeak = !isWeekend && ((minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60))
+  const weekendOffPeak = isWeekend && date.getTime() >= WEEKEND_OFFPEAK_FROM_MS
+  const isPeak = !weekendOffPeak && ((minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60))
   const isOffPeak = !isPeak
   const localTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return {

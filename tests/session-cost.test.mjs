@@ -21,12 +21,16 @@ assert(Math.abs(sessionCost(sessions.get('A').calls).total - 0.0135) < 1e-9, 'A 
 assert(Math.abs(sessionCost(sessions.get('B').calls).total - 0.003) < 1e-9, 'B cost preserved after A resumes')
 for (let i = 0; i < 30; i++) start('S' + i, { inputTokens: 10 })
 assert(sessions.size <= 20, 'session map bounded to <= 20 (' + sessions.size + ')')
-// Weekend = always off-peak (Beijing-time Sat/Sun), even inside peak-hour windows.
-const satPeakHours = computePeakState(new Date('2026-08-15T02:00:00Z')) // 10:00 Beijing Sat
-const sunPeakHours = computePeakState(new Date('2026-08-16T02:00:00Z')) // 10:00 Beijing Sun
-const monPeakHours = computePeakState(new Date('2026-08-17T02:00:00Z')) // 10:00 Beijing Mon (weekday)
-assert(satPeakHours.isOffPeak === true && satPeakHours.isPeak === false, 'Saturday 10:00 Beijing is off-peak')
-assert(sunPeakHours.isOffPeak === true && sunPeakHours.isPeak === false, 'Sunday 10:00 Beijing is off-peak')
-assert(satPeakHours.offPeakDiscount === 0.5, 'Saturday off-peak discount 0.5')
+// Weekend = always off-peak (Beijing-time Sat/Sun) only since the effective
+// instant 2026-08-22T16:00:00Z (00:00 Beijing Sun Aug 23). Before it, weekends
+// still followed the weekday windows (10:00 Beijing inside peak hours = peak).
+const preRuleSat = computePeakState(new Date('2026-08-15T02:00:00Z')) // 10:00 Beijing Sat, PRE-rule
+const sunOffPeak = computePeakState(new Date('2026-08-23T02:00:00Z')) // 10:00 Beijing Sun (rule day)
+const satOffPeak = computePeakState(new Date('2026-08-29T02:00:00Z')) // 10:00 Beijing Sat, post-rule
+const monPeakHours = computePeakState(new Date('2026-08-24T02:00:00Z')) // 10:00 Beijing Mon (weekday)
+assert(preRuleSat.isOffPeak === false && preRuleSat.isPeak === true, 'Pre-rule Saturday 10:00 Beijing is still peak')
+assert(sunOffPeak.isOffPeak === true && sunOffPeak.isPeak === false, 'Sunday 10:00 Beijing is off-peak (rule day)')
+assert(satOffPeak.isOffPeak === true && satOffPeak.isPeak === false, 'Post-rule Saturday 10:00 Beijing is off-peak')
+assert(satOffPeak.offPeakDiscount === 0.5, 'Saturday off-peak discount 0.5')
 assert(monPeakHours.isOffPeak === false && monPeakHours.isPeak === true, 'Monday 10:00 Beijing is peak')
 console.log('PASS: per-session cost preserved, map bounded to ' + sessions.size)
