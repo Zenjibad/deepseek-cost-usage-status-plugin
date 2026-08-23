@@ -64,12 +64,15 @@ export interface PeakState {
   beijingTime: string
 }
 
-/** DeepSeek's official peak hours are in BEIJING time (UTC+8): 09:00–12:00 and 14:00–18:00. */
+/** DeepSeek's official peak hours are in BEIJING time (UTC+8): 09:00–12:00 and 14:00–18:00.
+ *  Weekends (Sat/Sun in Beijing time) are always off-peak. */
 export function computePeakState(date: Date): PeakState {
   const bjMs = date.getTime() + 8 * 3600 * 1000
   const bj = new Date(bjMs)
   const minutes = bj.getUTCHours() * 60 + bj.getUTCMinutes()
-  const isPeak = (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60)
+  const weekdayBeijing = bj.getUTCDay() // 0=Sun, 6=Sat
+  const isWeekend = weekdayBeijing === 0 || weekdayBeijing === 6
+  const isPeak = !isWeekend && ((minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60))
   const isOffPeak = !isPeak
   const localTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return {
