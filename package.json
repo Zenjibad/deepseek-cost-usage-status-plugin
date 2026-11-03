@@ -1,6 +1,6 @@
 {
   "name": "deepseek-cost-usage-status-plugin",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Live DeepSeek API cost/usage/balance dashboard for the DeepSeek Harness (DSH) Web UI: a second composer stats line plus per-session cost tracking — shows on/off-peak (Beijing-time windows), session cost (official CNY pricing), ~¥/min burn rate, account balance, and current model. 在 DSH 内实时展示 DeepSeek API 用量与费用：输入区常驻统计行，展示空闲/高峰时段（北京时间）、会话成本、每分钟烧钱速率、账户余额与当前模型。",
   "license": "MIT",
   "type": "module",
@@ -27,10 +27,7 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-slots"
-      ],
+      "inject": [],
       "platform": "web"
     }
   },
@@ -58,21 +55,13 @@
   },
   "peerDependencies": {
     "react": "^18.2.0",
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6"
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "@deepseek-ai/cordis": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-runtime": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     }
   },

@@ -558,7 +558,9 @@ export function apply(ctx: Context, cfg?: Partial<Config>): void {
     )
 
     disposers.push(
-      c.on('agent/session-start', ({ agent }: { agent?: { id?: string } }) => {
+      // DSH 0.2 renamed this event: `agent/session-start` (emit) is gone, and
+      // `agent/created` carries the same `agent` on a serial, awaited dispatch.
+      c.on('agent/created', ({ agent }: { agent?: { id?: string } }) => {
         if (!agent || !agent.id) return
         currentSessionId = agent.id
         if (!sessions.has(agent.id)) {
